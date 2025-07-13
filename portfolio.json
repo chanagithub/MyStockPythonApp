@@ -1,0 +1,55 @@
+[
+  {
+    "symbol": "AOT",
+    "date": "2023-10-26",
+    "type": "BUY",
+    "volume": 100,
+    "price_per_unit": 68.5,
+    "commission": 15.27,
+    "mylotnumber": "L1",
+    "total_amount": 6865.27
+  },
+  {
+    "symbol": "PTT",
+    "date": "2023-11-15",
+    "type": "BUY",
+    "volume": 200,
+    "price_per_unit": 34,
+    "commission": 15.16,
+    "mylotnumber": "L2",
+    "total_amount": 6815.16
+  },
+  {
+    "symbol": "AOT",
+    "date": "2025-07-13",
+    "type": "BUY",
+    "volume": 1000,
+    "price_per_unit": 50,
+    "commission": 20,
+    "mylotnumber": "L3",
+    "total_amount": 50020.00
+  },
+  {
+    "symbol": "AOT",
+    "date": "2025-07-14",
+    "type": "BUY",
+    "volume": 300,
+    "price_per_unit": 45,
+    "commission": 20,
+    "mylotnumber": "L1752418682734",
+    "total_amount": 13520.00
+  },
+  {
+    "symbol": "AOT",
+    "date": "2025-08-01",
+    "type": "SELL",
+    "volume": 100,
+    "price_per_unit": 75.0,
+    "commission": 16.72,
+    "mylotnumber": null,
+    "closes_lot_number": "L1",
+    "total_amount": 7483.28,
+    "realized_pl": 618.01,
+    "cumulative_pl_for_symbol": 618.01
+  }
+]

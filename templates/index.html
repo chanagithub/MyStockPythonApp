@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Stock Portfolio Analyzer</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 2em; }
+        #results { margin-top: 1.5em; padding: 1em; border: 1px solid #ccc; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+        form {
+            margin-top: 2em;
+            padding: 1.5em;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            display: flex; flex-wrap: wrap; gap: 10px;
+        }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .summary-highlight {
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+        .pl-green { color: green; } .pl-red { color: red; }
+        td:nth-child(n+2) { text-align: right; }
+    </style>
+</head>
+<body>
+    <h1>Stock Portfolio Analyzer</h1>
+    <p>Please select your <code>portfolio.json</code> file from your computer or iCloud Drive.</p>
+    
+    <input type="file" id="fileInput" accept=".json">
+    <button onclick="analyze()">Analyze Portfolio</button>
+
+    <div id="results" style="display:none;">
+        <h2>Analysis Results</h2>
+        <p><strong>Total Transactions:</strong> <span id="count"></span></p>
+        <p><strong>Total Investment Cost:</strong> <span id="investment" class="summary-highlight"></span> THB</p>
+        <p><strong>Total Realized P/L:</strong> <span id="realized_pl" class="summary-highlight"></span> THB</p>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 1.5em;">
+            <h4>Current Holdings (Open Lots)</h4>
+            <button id="toggleHoldingsBtn" onclick="toggleTable('holdingsTable', 'toggleHoldingsBtn', 'Holdings')">Show Holdings</button>
+        </div>
+        <table id="holdingsTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Lot Number</th>
+                    <th>Symbol</th>
+                    <th>Buy Date</th>
+                    <th>Volume (Rem/Orig)</th>
+                    <th>Buy Price</th>
+                    <th>Total Cost</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 1.5em;">
+            <h4>Closed Trades (Realized P/L)</h4>
+            <button id="toggleClosedBtn" onclick="toggleTable('closedTradesTable', 'toggleClosedBtn', 'Closed Trades')">Show Closed Trades</button>
+        </div>
+        <table id="closedTradesTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Lot Number</th>
+                    <th>Symbol</th>
+                    <th>Buy Price</th>
+                    <th>Sell Price</th>
+                    <th>Realized P/L (THB)</th>
+                    <th>Lot Status</th>
+                    <th>Sell Date & Volume</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="managementSection" style="display:none; margin-top: 2em;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <h3 style="color: #c0392b; margin-right: 20px;">Data Management</h3>
+            <button id="toggleLogBtn" onclick="toggleTransactionLog()">Show Transaction Log</button>
+        </div>
+        <p>Use this section to edit or delete transactions. Remember to download the updated file after making changes.</p>
+        <!-- Initially hidden, toggled by the button -->
+        <table id="transactionLogTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Symbol</th>
+                    <th>Type</th>
+                    <th>Volume</th>
+                    <th>Price</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="singleStockAnalyzer" style="display:none; margin-top: 2em; padding: 1.5em; border: 1px solid #007aff; border-radius: 8px;">
+        <h3>Analyze Single Stock (Unrealized P/L)</h3>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <select id="singleStockSelect"></select>
+            <input type="number" id="currentPriceInput" placeholder="Current Market Price">
+            <button type="button" onclick="analyzeSingleStock()">Analyze Stock</button>
+        </div>
+        <table id="singleStockTable" style="display:none; margin-top: 1em;">
+            <thead>
+                <tr>
+                    <th>Lot Number</th>
+                    <th>Avg. Buy Cost</th>
+                    <th>Rem. Volume</th>
+                    <th>Current Value</th>
+                    <th>Unrealized P/L</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <form id="addTransactionForm" style="display:none;">
+        <h3>Add New Transaction</h3>
+        <input type="text" id="formSymbol" list="symbol-list" placeholder="Symbol (e.g., PTT)" required style="flex-basis: 48%;" oninput="toggleLotSelector()">
+        <datalist id="symbol-list"></datalist>
+        <input type="date" id="formDate" required>
+        <select id="formType" onchange="toggleLotSelector()">
+            <option value="BUY">BUY</option>
+            <option value="SELL">SELL</option>
+        </select>
+        <input type="number" id="formVolume" placeholder="Volume" required>
+        <input type="number" id="formPrice" step="0.01" placeholder="Price per Unit" required>
+        <input type="number" id="formCommission" step="0.01" placeholder="Commission" required>
+        
+        <div id="lotSelectorContainer" style="display: none; flex-basis: 100%;">
+            <label for="formClosesLot" style="margin-right: 10px;">Sell from Lot:</label>
+            <select id="formClosesLot" required></select>
+        </div>
+
+        <button type="button" onclick="addTransaction()">Add & Download Updated File</button>
+    </form>
+
+    <script>
+        // Global variable to hold the portfolio data in memory
+        let portfolioData = [];
+        let openLotsData = [];
+
+        /**
+         * A helper function to send portfolio data to the backend,
+         * get analysis, and update the UI.
+         */
+        async function updateAnalysisAndUI(portfolioJsonString) {
+            // Create a Blob from the JSON string to simulate a file
+            const blob = new Blob([portfolioJsonString], { type: 'application/json' });
+            const formData = new FormData();
+            formData.append('portfolio_file', blob, 'portfolio.json');
+
+            // Call the backend endpoint for analysis
+            const response = await fetch('/analyze', { method: 'POST', body: formData });
+            const data = await response.json();
+
+            // Store open lots data globally for the SELL form
+            openLotsData = data.open_lots;
+
+            // --- Populate the new symbol datalist ---
+            const symbolDatalist = document.getElementById('symbol-list');
+            const singleStockSelect = document.getElementById('singleStockSelect');
+            symbolDatalist.innerHTML = ''; // Clear previous options
+            singleStockSelect.innerHTML = '<option value="">-- Select a Stock --</option>';
+            if (data.all_symbols) {
+                data.all_symbols.forEach(symbol => {
+                    const option = document.createElement('option');
+                    option.value = symbol;
+                    symbolDatalist.appendChild(option);
+
+                    // Also populate the new dropdown for single stock analysis
+                    const selectOption = document.createElement('option');
+                    selectOption.value = symbol;
+                    selectOption.innerText = symbol;
+                    singleStockSelect.appendChild(selectOption);
+                });
+            }
+
+            // --- Populate UI with new analysis results ---
+            document.getElementById('count').innerText = data.transaction_count;
+            
+            const investmentSpan = document.getElementById('investment');
+            investmentSpan.innerText = data.total_investment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            const realizedPlSpan = document.getElementById('realized_pl');
+            realizedPlSpan.innerText = data.total_realized_pl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            realizedPlSpan.classList.remove('pl-green', 'pl-red');
+            realizedPlSpan.classList.add(data.total_realized_pl >= 0 ? 'pl-green' : 'pl-red');
+            
+            // Populate the new transaction log table
+            populateTransactionLog();
+            
+            const openLotsTableBody = document.querySelector("#holdingsTable tbody");
+            openLotsTableBody.innerHTML = ''; // Clear previous results
+            data.open_lots.forEach(lot => {
+                const row = openLotsTableBody.insertRow();
+                row.insertCell(0).innerText = lot.lot_number;
+                row.insertCell(1).innerText = lot.symbol;
+                row.insertCell(2).innerText = lot.buy_date;
+                row.insertCell(3).innerText = `${lot.remaining_volume.toLocaleString()} / ${lot.original_volume.toLocaleString()}`;
+                row.insertCell(4).innerText = lot.buy_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                row.insertCell(5).innerText = lot.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            });
+
+            const closedTradesTableBody = document.querySelector("#closedTradesTable tbody");
+            closedTradesTableBody.innerHTML = ''; // Clear previous results
+            data.closed_trades.forEach(holding => {
+                const row = closedTradesTableBody.insertRow();
+                row.insertCell(0).innerText = holding.lot_number;
+                row.insertCell(1).innerText = holding.symbol;
+                row.insertCell(2).innerText = holding.buy_price_per_share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                row.insertCell(3).innerText = holding.sell_price_per_share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                row.insertCell(4).innerText = holding.realized_pl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                
+                // --- New Logic for Lot Status Cell ---
+                const statusCell = row.insertCell(5);
+                if (holding.is_lot_fully_sold) {
+                    statusCell.innerHTML = '&#10004; Sold Out'; // Checkmark
+                    statusCell.style.color = 'green';
+                    statusCell.style.fontWeight = 'bold';
+                } else {
+                    statusCell.innerText = `Rem: ${holding.remaining_in_lot_after_sale}`;
+                    statusCell.style.color = 'red';
+                }
+
+                row.insertCell(6).innerText = `${holding.sell_date} (${holding.volume_sold} sh.)`;
+            });
+        }
+
+        async function analyze() {
+            const fileInput = document.getElementById('fileInput');
+            if (fileInput.files.length === 0) {
+                alert('Please select a file first!');
+                return;
+            }
+
+            // Store the original file content in our global variable
+            const fileContent = await fileInput.files[0].text();
+            portfolioData = JSON.parse(fileContent);
+
+            // Call the helper function to analyze and update the display
+            await updateAnalysisAndUI(fileContent);
+
+            // --- Show Results ---
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('managementSection').style.display = 'block';
+            document.getElementById('singleStockAnalyzer').style.display = 'block';
+            document.getElementById('addTransactionForm').style.display = 'flex'; // Show the form
+        }
+
+        function addTransaction() {
+            if (portfolioData.length === 0) {
+                alert('Please analyze a portfolio file first!');
+                return;
+            }
+
+            const type = document.getElementById('formType').value;
+            let mylotnumber = null;
+            let closes_lot_number = null;
+
+            if (type === 'BUY') {
+                // Generate a unique lot number for new buys
+                mylotnumber = `L${Date.now()}`;
+            } else { // SELL
+                closes_lot_number = document.getElementById('formClosesLot').value;
+                if (!closes_lot_number) {
+                    alert('Please select which lot you are selling from.');
+                    return;
+                }
+            }
+
+            // 1. Get data from form
+            const newTx = {
+                symbol: document.getElementById('formSymbol').value.toUpperCase(),
+                date: document.getElementById('formDate').value,
+                type: type,
+                volume: parseInt(document.getElementById('formVolume').value, 10),
+                price_per_unit: parseFloat(document.getElementById('formPrice').value),
+                commission: parseFloat(document.getElementById('formCommission').value),
+                mylotnumber: mylotnumber,
+                closes_lot_number: closes_lot_number,
+                // The following are not strictly needed but help if we re-analyze on the client
+                total_amount: null,
+                realized_pl: null,
+                cumulative_pl_for_symbol: null
+            };
+
+            // 2. Basic validation
+            if (!newTx.symbol || !newTx.date || isNaN(newTx.volume) || isNaN(newTx.price_per_unit) || isNaN(newTx.commission)) {
+                alert('Please fill all fields correctly.');
+                return;
+            }
+
+            // 3. Add the new transaction to our in-memory data
+            portfolioData.push(newTx);
+
+            // 4. Convert the updated data to a JSON string
+            const updatedJsonString = JSON.stringify(portfolioData, null, 2);
+
+            // 5. Re-analyze the new data and update the UI immediately
+            updateAnalysisAndUI(updatedJsonString);
+
+            // 6. Create a downloadable file from the updated data
+            downloadPortfolioFile(updatedJsonString);
+        }
+
+        /**
+         * Helper function to create and trigger a file download.
+         */
+        function downloadPortfolioFile(jsonString) {
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'portfolio.json'; // Suggest the original filename
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        /**
+         * Populates the main transaction log table for data management.
+         */
+        function populateTransactionLog() {
+            const tableBody = document.querySelector("#transactionLogTable tbody");
+            tableBody.innerHTML = ''; // Clear previous results
+
+            portfolioData.forEach((tx, index) => {
+                const row = tableBody.insertRow();
+                row.insertCell(0).innerText = tx.date;
+                row.insertCell(1).innerText = tx.symbol;
+                row.insertCell(2).innerText = tx.type;
+                row.insertCell(3).innerText = tx.volume.toLocaleString();
+                row.insertCell(4).innerText = tx.price_per_unit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                
+                const actionsCell = row.insertCell(5);
+                // We will add an Edit button later
+                actionsCell.innerHTML = `
+                    <button onclick="editTransaction(${index})">Edit</button>
+                    <button onclick="deleteTransaction(${index})">Delete</button>
+                `;
+            });
+        }
+
+        /**
+         * Deletes a transaction from the portfolio.
+         */
+        function deleteTransaction(index) {
+            const txToDelete = portfolioData[index];
+            if (!confirm(`Are you sure you want to delete the ${txToDelete.type} transaction for ${txToDelete.symbol} on ${txToDelete.date}?`)) {
+                return;
+            }
+
+            // Remove the transaction from the main data array
+            portfolioData.splice(index, 1);
+
+            // Convert the updated data to a JSON string
+            const updatedJsonString = JSON.stringify(portfolioData, null, 2);
+
+            // Re-run the full analysis and update all UI elements
+            updateAnalysisAndUI(updatedJsonString);
+
+            // Prompt user to download the new file
+            downloadPortfolioFile(updatedJsonString);
+            alert('Transaction deleted. Your updated "portfolio.json" has been downloaded.');
+        }
+
+        /**
+         * Turns a row in the transaction log into an editable form.
+         */
+        function editTransaction(index) {
+            const tableBody = document.querySelector("#transactionLogTable tbody");
+            const row = tableBody.rows[index];
+            const tx = portfolioData[index];
+
+            // Replace the row content with input fields.
+            // We display symbol and type as read-only to avoid breaking lot logic.
+            row.innerHTML = `
+                <td><input type="date" id="edit-date-${index}" value="${tx.date}" style="width: 130px;"></td>
+                <td>${tx.symbol}</td>
+                <td>${tx.type}</td>
+                <td><input type="number" id="edit-volume-${index}" value="${tx.volume}" style="width: 80px;"></td>
+                <td><input type="number" id="edit-price-${index}" value="${tx.price_per_unit}" step="0.01" style="width: 80px;"></td>
+                <td>
+                    <input type="number" id="edit-commission-${index}" value="${tx.commission}" step="0.01" style="width: 80px;">
+                    <button onclick="saveEdit(${index})">&#10004;</button> <!-- Checkmark for Save -->
+                    <button onclick="populateTransactionLog()">&#10006;</button> <!-- X for Cancel -->
+                </td>
+            `;
+        }
+
+        /**
+         * Saves the changes made to a transaction.
+         */
+        function saveEdit(index) {
+            const tx = portfolioData[index];
+
+            // Get new values from the form
+            const newDate = document.getElementById(`edit-date-${index}`).value;
+            const newVolume = parseInt(document.getElementById(`edit-volume-${index}`).value, 10);
+            const newPrice = parseFloat(document.getElementById(`edit-price-${index}`).value);
+            const newCommission = parseFloat(document.getElementById(`edit-commission-${index}`).value);
+
+            if (!newDate || isNaN(newVolume) || isNaN(newPrice) || isNaN(newCommission)) {
+                alert('Please ensure all fields have valid values.');
+                return;
+            }
+
+            // Update the transaction object
+            tx.date = newDate;
+            tx.volume = newVolume;
+            tx.price_per_unit = newPrice;
+            tx.commission = newCommission;
+
+            // Nullify calculated fields to force the backend to recalculate them.
+            tx.total_amount = null;
+            tx.realized_pl = null;
+            tx.cumulative_pl_for_symbol = null;
+
+            const updatedJsonString = JSON.stringify(portfolioData, null, 2);
+            updateAnalysisAndUI(updatedJsonString);
+            downloadPortfolioFile(updatedJsonString);
+            alert('Transaction updated. Your updated "portfolio.json" has been downloaded.');
+        }
+
+        /**
+         * Toggles the visibility of the transaction log table.
+         */
+        function toggleTransactionLog() {
+            const table = document.getElementById('transactionLogTable');
+            const btn = document.getElementById('toggleLogBtn');
+            if (table.style.display === 'none') {
+                table.style.display = 'table';
+                btn.innerText = 'Hide Transaction Log';
+            } else {
+                table.style.display = 'none';
+                btn.innerText = 'Show Transaction Log';
+            }
+        }
+
+        /**
+         * A generic function to toggle the visibility of any table.
+         */
+        function toggleTable(tableId, buttonId, name) {
+            const table = document.getElementById(tableId);
+            const btn = document.getElementById(buttonId);
+            if (table.style.display === 'none') {
+                table.style.display = 'table';
+                btn.innerText = `Hide ${name}`;
+            } else {
+                table.style.display = 'none';
+                btn.innerText = `Show ${name}`;
+            }
+        }
+
+        function toggleLotSelector() {
+            const type = document.getElementById('formType').value;
+            const container = document.getElementById('lotSelectorContainer');
+            const selector = document.getElementById('formClosesLot');
+            
+            if (type === 'SELL') {
+                const symbol = document.getElementById('formSymbol').value.toUpperCase();
+                selector.innerHTML = '<option value="">-- Select a Lot --</option>'; // Clear and add default
+                
+                const relevantLots = openLotsData.filter(lot => lot.symbol === symbol);
+                relevantLots.forEach(lot => {
+                    const option = document.createElement('option');
+                    option.value = lot.lot_number;
+                    option.innerText = `Lot ${lot.lot_number} (${lot.remaining_volume} shares @ ${lot.buy_price})`;
+                    selector.appendChild(option);
+                });
+                container.style.display = 'block';
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        function analyzeSingleStock() {
+            const selectedSymbol = document.getElementById('singleStockSelect').value;
+            const currentPrice = parseFloat(document.getElementById('currentPriceInput').value);
+            const resultsTable = document.getElementById('singleStockTable');
+            const tableBody = resultsTable.querySelector('tbody');
+
+            if (!selectedSymbol) {
+                alert('Please select a stock to analyze.');
+                return;
+            }
+            if (isNaN(currentPrice) || currentPrice <= 0) {
+                alert('Please enter a valid current market price.');
+                return;
+            }
+
+            // Filter for the selected stock's open lots
+            const stockLots = openLotsData.filter(lot => lot.symbol === selectedSymbol);
+
+            // Sort by buy price, descending (แพงไปถูก)
+            stockLots.sort((a, b) => b.buy_price - a.buy_price);
+
+            // Clear previous results and display the table
+            tableBody.innerHTML = '';
+            resultsTable.style.display = 'table';
+
+            stockLots.forEach(lot => {
+                const costBasisPerShare = lot.total_cost / lot.original_volume;
+                const remainingCostBasis = costBasisPerShare * lot.remaining_volume;
+                const currentValue = lot.remaining_volume * currentPrice;
+                const unrealizedPL = currentValue - remainingCostBasis;
+
+                const row = tableBody.insertRow();
+                row.insertCell(0).innerText = lot.lot_number;
+                row.insertCell(1).innerText = costBasisPerShare.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                row.insertCell(2).innerText = lot.remaining_volume.toLocaleString();
+                row.insertCell(3).innerText = currentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                
+                const plCell = row.insertCell(4);
+                plCell.innerText = unrealizedPL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                plCell.classList.add(unrealizedPL >= 0 ? 'pl-green' : 'pl-red');
+            });
+        }
+    </script>
+</body>
+</html>
