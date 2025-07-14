@@ -48,14 +48,16 @@ if __name__ == "__main__":
     """
 
     # 4. วิเคราะห์ข้อมูลจากพอร์ตของเราด้วยฟังก์ชันใหม่
-    open_lots, closed_trades, total_investment = analyze_portfolio_by_lot(my_portfolio)
+    open_lots, closed_trades, total_investment, total_realized_pl, total_dividends = analyze_portfolio_by_lot(my_portfolio)
 
     print(f"\n--- Portfolio Analysis ---")
     print(f"Total investment cost (all BUYs): {total_investment:,.2f} THB")
+    print(f"Total realized P/L: {total_realized_pl:,.2f} THB")
+    print(f"Total dividends received: {total_dividends:,.2f} THB")
 
     print("\n--- Current Holdings (Open Lots) ---")
     for lot in open_lots:
-        print(f"  Lot {lot.lot_number}: {lot.symbol} - {lot.remaining_volume}/{lot.original_volume} shares @ {lot.buy_price:,.2f} THB")
+        print(f"  Lot {lot.lot_number}: {lot.symbol} - {lot.remaining_volume}/{lot.original_volume} shares @ {lot.buy_price:,.2f} THB | Dividends: {lot.dividends_received:,.2f} THB")
 
     print("\n--- Closed Trades (Realized P/L) ---")
     for trade in closed_trades:

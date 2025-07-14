@@ -19,6 +19,8 @@ class StockTransaction:
     total_amount: Optional[float] = None
     realized_pl: Optional[float] = None
     cumulative_pl_for_symbol: Optional[float] = None
+    remark: Optional[str] = None
+    tax_rate: Optional[float] = None
 
     # --- Old fields kept for compatibility during transition ---
     closes_lot_number: Optional[str] = None
@@ -28,10 +30,17 @@ class StockTransaction:
         """Calculates the total amount if not present in the data."""
         if self.total_amount is not None:
             return self.total_amount
+        
+        # Fallback calculation logic for older data formats or incomplete entries
         if self.type.upper() == 'BUY':
             return (self.volume * self.price_per_unit) + self.commission
         elif self.type.upper() == 'SELL':
             return (self.volume * self.price_per_unit) - self.commission
+        elif self.type.upper() in ['DIVIDEND', 'CASH_RETURN']:
+            # If total_amount is missing, try to calculate from volume and price_per_unit
+            if self.volume is not None and self.price_per_unit is not None:
+                return self.volume * self.price_per_unit
+            return 0.0 # Default to 0 if it cannot be calculated
         return 0.0
 
 @dataclass
@@ -44,6 +53,7 @@ class OpenLot:
     buy_price: float
     total_cost: float
     lot_number: str
+    dividends_received: float = 0.0
 
 @dataclass
 class ClosedTrade:
@@ -58,16 +68,17 @@ class ClosedTrade:
     cumulative_pl_for_symbol: float
     lot_number: str
     buy_price_per_share: float
+    buy_cost_per_share_incl_comm: float
     sell_price_per_share: float
     # New fields for detailed status
     remaining_in_lot_after_sale: int
     is_lot_fully_sold: bool = False
 
-def analyze_portfolio_by_lot(portfolio: List[StockTransaction]) -> (List[OpenLot], List[ClosedTrade], float, float):
+def analyze_portfolio_by_lot(portfolio: List[StockTransaction]) -> (List[OpenLot], List[ClosedTrade], float, float, float):
     """
     Analyzes portfolio by matching SELLs to specific BUYs using lot numbers.
     This is NOT FIFO; it relies on the user specifying which lot to close.
-    Returns a tuple of (open_lots, closed_trades, total_investment).
+    Returns a tuple of (open_lots, closed_trades, total_investment, total_realized_pl, total_dividends).
     """
     # Use a deep copy to work on a temporary version of the data, preserving the original list
     transactions = sorted([copy.deepcopy(tx) for tx in portfolio], key=lambda t: t.date)
@@ -79,6 +90,16 @@ def analyze_portfolio_by_lot(portfolio: List[StockTransaction]) -> (List[OpenLot
     closed_trades_results: List[ClosedTrade] = []
     cumulative_pl: Dict[str, float] = defaultdict(float)
     total_investment = sum(tx.get_total_amount() for tx in portfolio if tx.type.upper() == 'BUY')
+
+    # --- NEW: Process Dividends ---
+    dividends_per_lot: Dict[str, float] = defaultdict(float)
+    dividend_transactions = [tx for tx in transactions if tx.type.upper() in ['DIVIDEND', 'CASH_RETURN']]
+    for div_tx in dividend_transactions:
+        if div_tx.closes_lot_number:
+            # The amount is the cash received
+            dividends_per_lot[div_tx.closes_lot_number] += div_tx.get_total_amount()
+
+    total_dividends = sum(dividends_per_lot.values())
 
     sell_transactions = [tx for tx in transactions if tx.type.upper() == 'SELL']
 
@@ -111,6 +132,7 @@ def analyze_portfolio_by_lot(portfolio: List[StockTransaction]) -> (List[OpenLot
                 realized_pl=realized_pl, cumulative_pl_for_symbol=cumulative_pl[buy_lot.symbol],
                 lot_number=buy_lot.mylotnumber,
                 buy_price_per_share=buy_lot.price_per_unit,
+                buy_cost_per_share_incl_comm=cost_per_share,
                 sell_price_per_share=sell_tx.price_per_unit,
                 remaining_in_lot_after_sale=buy_lot.volume, # The new remaining volume
                 is_lot_fully_sold=is_lot_now_fully_sold
@@ -131,11 +153,14 @@ def analyze_portfolio_by_lot(portfolio: List[StockTransaction]) -> (List[OpenLot
             symbol=lot.symbol, buy_date=lot.date,
             original_volume=original_buy_lots[lot.mylotnumber].volume,
             remaining_volume=lot.volume,
-            buy_price=lot.price_per_unit, total_cost=lot.get_total_amount(),
-            lot_number=lot.mylotnumber
+            buy_price=lot.price_per_unit,
+            # FIX: Calculate cost basis for the *remaining* shares, not the original total cost.
+            total_cost=(original_buy_lots[lot.mylotnumber].get_total_amount() / original_buy_lots[lot.mylotnumber].volume) * lot.volume if original_buy_lots[lot.mylotnumber].volume > 0 else 0,
+            lot_number=lot.mylotnumber,
+            dividends_received=dividends_per_lot.get(lot.mylotnumber, 0.0)
         ) for lot in buy_lots_pool.values() if lot.volume > 0
     ]
     
     total_realized_pl = sum(trade.realized_pl for trade in closed_trades_results)
     
-    return sorted(open_lots_results, key=lambda x: x.buy_date), sorted(closed_trades_results, key=lambda x: x.sell_date), total_investment, total_realized_pl
+    return sorted(open_lots_results, key=lambda x: x.buy_date), sorted(closed_trades_results, key=lambda x: x.sell_date), total_investment, total_realized_pl, total_dividends

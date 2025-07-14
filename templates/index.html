@@ -37,10 +37,17 @@
             color: white;
             border: 1px solid #007aff;
         }
+        .toggle-icon {
+            display: inline-block;
+            width: 1.2em;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body>
-    <h1>Stock Portfolio Analyzer</h1>
+    <h1 id="main-title">Stock Portfolio Analyzer</h1>
     <p>Please select your <code>portfolio.json</code> file from your computer or iCloud Drive.</p>
     
     <div class="main-action-controls">
@@ -52,6 +59,7 @@
         <h2>Analysis Results</h2>
         <p><strong>Total Transactions:</strong> <span id="count"></span></p>
         <p><strong>Total Investment Cost:</strong> <span id="investment" class="summary-highlight"></span> THB</p>
+        <p><strong>Total Dividends Received:</strong> <span id="total_dividends" class="summary-highlight pl-green"></span> THB</p>
         <p><strong>Total Realized P/L:</strong> <span id="realized_pl" class="summary-highlight"></span> THB</p>
 
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 1.5em;">
@@ -67,6 +75,7 @@
                     <th>Volume (Rem/Orig)</th>
                     <th>Buy Price</th>
                     <th>Total Cost</th>
+                    <th>ปันผลและเงินคืน</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -81,8 +90,8 @@
                 <tr>
                     <th>Lot Number</th>
                     <th>Symbol</th>
-                    <th>Buy Price</th>
-                    <th>Sell Price</th>
+                    <th>Buy Cost/Share</th>
+                    <th>Sell Price/Share</th>
                     <th>Realized P/L (THB)</th>
                     <th>Lot Status</th>
                     <th>Sell Date & Volume</th>
@@ -94,8 +103,11 @@
 
     <div id="managementSection" style="display:none; margin-top: 2em;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-            <h3 style="color: #c0392b; margin-right: 20px;">Data Management</h3>
-            <button id="toggleLogBtn" onclick="toggleTransactionLog()">Show Transaction Log</button>
+            <h3 style="color: #333; margin-right: 20px;">Data Management</h3>
+            <div>
+                <button id="yearEndBtn" onclick="performYearEndClosing()" style="background-color: #e74c3c; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; margin-right: 10px;">ปิดยอดประจำปี และยกยอดไปปีต่อไป</button>
+                <button id="toggleLogBtn" onclick="toggleTransactionLog()">Show Transaction Log</button>
+            </div>
         </div>
         <p>Use this section to edit or delete transactions. Remember to download the updated file after making changes.</p>
         <!-- Initially hidden, toggled by the button -->
@@ -105,7 +117,7 @@
                     <th>Date</th>
                     <th>Symbol</th>
                     <th>Type</th>
-                    <th>Volume</th>
+                    <th>Volume / Amount</th>
                     <th>Price</th>
                     <th>Actions</th>
                 </tr>
@@ -125,10 +137,12 @@
             <thead>
                 <tr>
                     <th>Lot Number</th>
-                    <th>Avg. Buy Cost</th>
-                    <th>Rem. Volume</th>
-                    <th>Current Value</th>
-                    <th>Unrealized P/L</th>
+                    <th>Avg. Buy Cost (incl. comm.)</th>
+                    <th>Rem. Shares</th>
+                    <th>Dividends Recv.</th>
+                    <th>Current Value (excl. comm.)</th>
+                    <th>Unrealized P/L (Stock)</th>
+                    <th>Net Unrealized P/L (incl. Div)</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -137,17 +151,43 @@
 
     <form id="addTransactionForm" style="display:none;">
         <h3>Add New Transaction</h3>
-        <input type="text" id="formSymbol" list="symbol-list" placeholder="Symbol (e.g., PTT)" required style="flex-basis: 48%;" oninput="toggleLotSelector()">
+        <input type="text" id="formSymbol" list="symbol-list" placeholder="Symbol (e.g., PTT)" required style="flex-basis: 48%;" oninput="updateFormFieldsForType()">
         <datalist id="symbol-list"></datalist>
         <input type="date" id="formDate" required>
-        <select id="formType" onchange="toggleLotSelector()">
+        <select id="formType" onchange="updateFormFieldsForType()">
             <option value="BUY">BUY</option>
             <option value="SELL">SELL</option>
+            <option value="DIVIDEND">DIVIDEND</option>
+            <option value="CASH_RETURN">CASH RETURN</option>
         </select>
-        <input type="number" id="formVolume" placeholder="Volume" required>
-        <input type="number" id="formPrice" step="0.01" placeholder="Price per Unit" required>
-        <input type="number" id="formCommission" step="0.01" placeholder="Commission" required>
+        <div id="buySellFieldsContainer" style="display: flex; flex-wrap: wrap; gap: 10px; flex-basis: 100%;">
+            <input type="number" id="formVolume" placeholder="Volume" required>
+            <input type="number" id="formPrice" step="0.01" placeholder="Price per Unit" required>
+            <input type="number" id="formCommission" step="0.01" placeholder="Commission" required>
+        </div>
         
+        <div id="dividendFieldsContainer" style="display: none; flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+            <input type="number" id="formDivPerShare" step="0.0001" placeholder="Dividend per Share" style="flex-grow: 1;" oninput="calculateLiveDividends()">
+            <label for="formTaxRate" style="margin-left: 5px; white-space: nowrap;">อัตราภาษี (%):</label>
+            <input type="number" id="formTaxRate" step="0.1" value="10" style="flex-grow: 1;" oninput="calculateLiveDividends()">
+            <input type="text" id="formDivRemark" placeholder="Remark (e.g., ปันผล H1/2567)" style="flex-basis: 100%;">
+        </div>
+
+        <div id="cashReturnFieldsContainer" style="display: none; flex-basis: 100%; display: flex; gap: 10px;">
+            <input type="number" id="formReturnPerShare" step="0.01" placeholder="Cash Return per Share" style="flex-grow: 1;" oninput="calculateLiveCashReturns()">
+            <input type="text" id="formReturnRemark" placeholder="Remark (e.g., คืนทุนลดพาร์)" style="flex-grow: 2;">
+        </div>
+
+        <!-- Container for displaying eligible lots for DIVIDEND -->
+        <div id="dividendLotListContainer" style="display: none; flex-basis: 100%; margin-top: 1em; border-top: 1px solid #eee; padding-top: 1em;">
+            <!-- JS will populate this table -->
+        </div>
+
+        <!-- Container for displaying eligible lots for CASH_RETURN -->
+        <div id="cashReturnLotListContainer" style="display: none; flex-basis: 100%; margin-top: 1em; border-top: 1px solid #eee; padding-top: 1em;">
+            <!-- JS will populate this table -->
+        </div>
+
         <div id="lotSelectorContainer" style="display: none; flex-basis: 100%;">
             <label for="formClosesLot" style="margin-right: 10px;">Sell from Lot:</label>
             <select id="formClosesLot" required></select>
@@ -208,19 +248,74 @@
             realizedPlSpan.classList.remove('pl-green', 'pl-red');
             realizedPlSpan.classList.add(data.total_realized_pl >= 0 ? 'pl-green' : 'pl-red');
             
+            // --- Populate Dividends ---
+            const totalDividendsSpan = document.getElementById('total_dividends');
+            totalDividendsSpan.innerText = data.total_dividends.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
             // Populate the new transaction log table
             populateTransactionLog();
             
             const openLotsTableBody = document.querySelector("#holdingsTable tbody");
             openLotsTableBody.innerHTML = ''; // Clear previous results
-            data.open_lots.forEach(lot => {
-                const row = openLotsTableBody.insertRow();
-                row.insertCell(0).innerText = lot.lot_number;
-                row.insertCell(1).innerText = lot.symbol;
-                row.insertCell(2).innerText = lot.buy_date;
-                row.insertCell(3).innerText = `${lot.remaining_volume.toLocaleString()} / ${lot.original_volume.toLocaleString()}`;
-                row.insertCell(4).innerText = lot.buy_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                row.insertCell(5).innerText = lot.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            // --- NEW: Group lots by symbol for clearer display ---
+            const lotsBySymbol = data.open_lots.reduce((acc, lot) => {
+                if (!acc[lot.symbol]) {
+                    acc[lot.symbol] = [];
+                }
+                acc[lot.symbol].push(lot);
+                return acc;
+            }, {});
+
+            const sortedSymbols = Object.keys(lotsBySymbol).sort();
+
+            sortedSymbols.forEach(symbol => {
+                const lots = lotsBySymbol[symbol];
+
+                // --- Calculate subtotals for the group ---
+                const groupTotalShares = lots.reduce((sum, lot) => sum + lot.remaining_volume, 0);
+                const groupTotalCost = lots.reduce((sum, lot) => sum + lot.total_cost, 0);
+                const groupTotalDividends = lots.reduce((sum, lot) => sum + lot.dividends_received, 0);
+
+                // --- Create a group header row with subtotals ---
+                const groupRow = openLotsTableBody.insertRow();
+                groupRow.style.backgroundColor = '#f0f0f0';
+                groupRow.style.fontWeight = 'bold';
+                groupRow.style.cursor = 'pointer';
+                groupRow.onclick = () => toggleLotDetails(symbol);
+                
+                const symbolCell = groupRow.insertCell(0);
+                symbolCell.colSpan = 3;
+                symbolCell.innerHTML = `<span id="toggle-icon-${symbol}" class="toggle-icon">+</span> Symbol: ${symbol}`;
+                symbolCell.style.textAlign = 'left';
+
+                const sharesCell = groupRow.insertCell(1);
+                sharesCell.innerText = `Total: ${groupTotalShares.toLocaleString()} shares`;
+                sharesCell.colSpan = 2;
+
+                const costCell = groupRow.insertCell(2);
+                costCell.innerText = groupTotalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                const divCell = groupRow.insertCell(3);
+                divCell.innerText = groupTotalDividends.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (groupTotalDividends > 0) { divCell.classList.add('pl-green'); }
+
+                // --- Create rows for each lot within the group ---
+                lots.forEach(lot => {
+                    const row = openLotsTableBody.insertRow();
+                    row.className = `lot-detail-row`; // Use a generic class
+                    row.dataset.group = symbol; // And a data-attribute for robust selection
+                    row.style.display = 'none'; // Initially hidden
+                    row.insertCell(0).innerText = lot.lot_number;
+                    row.insertCell(1).innerText = ""; // Keep symbol column empty for cleaner look
+                    row.insertCell(2).innerText = lot.buy_date;
+                    row.insertCell(3).innerText = `${lot.remaining_volume.toLocaleString()} / ${lot.original_volume.toLocaleString()}`;
+                    row.insertCell(4).innerText = lot.buy_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    row.insertCell(5).innerText = lot.total_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    const lotDivCell = row.insertCell(6);
+                    lotDivCell.innerText = lot.dividends_received.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    if (lot.dividends_received > 0) { lotDivCell.classList.add('pl-green'); }
+                });
             });
 
             const closedTradesTableBody = document.querySelector("#closedTradesTable tbody");
@@ -229,7 +324,7 @@
                 const row = closedTradesTableBody.insertRow();
                 row.insertCell(0).innerText = holding.lot_number;
                 row.insertCell(1).innerText = holding.symbol;
-                row.insertCell(2).innerText = holding.buy_price_per_share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                row.insertCell(2).innerText = holding.buy_cost_per_share_incl_comm.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 row.insertCell(3).innerText = holding.sell_price_per_share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 row.insertCell(4).innerText = holding.realized_pl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 
@@ -276,53 +371,184 @@
             }
 
             const type = document.getElementById('formType').value;
-            let mylotnumber = null;
-            let closes_lot_number = null;
+            const transactionsToAdd = [];
 
-            if (type === 'BUY') {
-                // Generate a unique lot number for new buys
-                mylotnumber = `L${Date.now()}`;
-            } else { // SELL
-                closes_lot_number = document.getElementById('formClosesLot').value;
-                if (!closes_lot_number) {
-                    alert('Please select which lot you are selling from.');
-                    return;
-                }
-            }
-
-            // 1. Get data from form
-            const newTx = {
+            // 1. Create the base transaction object
+            const baseTx = {
                 symbol: document.getElementById('formSymbol').value.toUpperCase(),
                 date: document.getElementById('formDate').value,
                 type: type,
-                volume: parseInt(document.getElementById('formVolume').value, 10),
-                price_per_unit: parseFloat(document.getElementById('formPrice').value),
-                commission: parseFloat(document.getElementById('formCommission').value),
-                mylotnumber: mylotnumber,
-                closes_lot_number: closes_lot_number,
-                // The following are not strictly needed but help if we re-analyze on the client
-                total_amount: null,
-                realized_pl: null,
-                cumulative_pl_for_symbol: null
+                volume: 0, price_per_unit: 0, commission: 0,
+                mylotnumber: null, closes_lot_number: null, remark: null,
+                total_amount: null, realized_pl: null, cumulative_pl_for_symbol: null,
+                tax_rate: null
             };
 
-            // 2. Basic validation
-            if (!newTx.symbol || !newTx.date || isNaN(newTx.volume) || isNaN(newTx.price_per_unit) || isNaN(newTx.commission)) {
-                alert('Please fill all fields correctly.');
+            // 2. Populate details based on transaction type
+            if (type === 'BUY') {
+                const newTx = { ...baseTx };
+                newTx.mylotnumber = `L${Date.now()}`;
+                newTx.volume = parseInt(document.getElementById('formVolume').value, 10);
+                newTx.price_per_unit = parseFloat(document.getElementById('formPrice').value);
+                newTx.commission = parseFloat(document.getElementById('formCommission').value);
+                if (!newTx.symbol || !newTx.date || isNaN(newTx.volume) || isNaN(newTx.price_per_unit) || isNaN(newTx.commission)) {
+                    alert('Please fill all fields correctly.');
+                    return;
+                }
+                transactionsToAdd.push(newTx);
+
+            } else if (type === 'SELL') {
+                const newTx = { ...baseTx };
+                newTx.closes_lot_number = document.getElementById('formClosesLot').value;
+                newTx.volume = parseInt(document.getElementById('formVolume').value, 10);
+                newTx.price_per_unit = parseFloat(document.getElementById('formPrice').value);
+                newTx.commission = parseFloat(document.getElementById('formCommission').value);
+                if (!newTx.closes_lot_number) {
+                    alert('Please select which lot you are selling from.');
+                    return;
+                }
+                if (!newTx.symbol || !newTx.date || isNaN(newTx.volume) || isNaN(newTx.price_per_unit) || isNaN(newTx.commission)) {
+                    alert('Please fill all fields correctly.');
+                    return;
+                }
+                transactionsToAdd.push(newTx);
+
+            } else if (type === 'DIVIDEND') {
+                const divPerShare = parseFloat(document.getElementById('formDivPerShare').value);
+                if (isNaN(divPerShare) || divPerShare <= 0) {
+                    alert('Please enter a valid Dividend per Share.');
+                    return;
+                }
+                const lotRows = document.querySelectorAll('#dividendLotListContainer .lot-row');
+                if (lotRows.length === 0) {
+                    alert('No eligible lots found for this stock.');
+                    return;
+                }
+                lotRows.forEach(row => {
+                    const lotTx = { ...baseTx };
+                    lotTx.closes_lot_number = row.dataset.lotNumber;
+                    lotTx.remark = document.getElementById('formDivRemark').value;
+                    lotTx.tax_rate = parseFloat(document.getElementById('formTaxRate').value) || 0;
+                    lotTx.price_per_unit = divPerShare;
+                    lotTx.volume = parseInt(row.dataset.volume, 10);
+                    const netAmount = parseFloat(row.querySelector('.net-amount-cell').dataset.amount);
+                    lotTx.total_amount = netAmount;
+                    transactionsToAdd.push(lotTx);
+                });
+
+            } else if (type === 'CASH_RETURN') {
+                const returnPerShare = parseFloat(document.getElementById('formReturnPerShare').value);
+                if (isNaN(returnPerShare) || returnPerShare <= 0) {
+                    alert('Please enter a valid Cash Return per Share.');
+                    return;
+                }
+                const lotRows = document.querySelectorAll('#cashReturnLotListContainer .lot-row');
+                if (lotRows.length === 0) {
+                    alert('No eligible lots found for this stock.'); return;
+                }
+                lotRows.forEach(row => {
+                    const lotTx = { ...baseTx };
+                    lotTx.closes_lot_number = row.dataset.lotNumber;
+                    lotTx.remark = document.getElementById('formReturnRemark').value;
+                    lotTx.price_per_unit = returnPerShare;
+                    lotTx.volume = parseInt(row.dataset.volume, 10);
+                    const returnAmount = parseFloat(row.querySelector('.net-amount-cell').dataset.amount);
+                    lotTx.total_amount = returnAmount;
+                    transactionsToAdd.push(lotTx);
+                });
+            }
+
+            // 3. If any transactions were created, add them and update everything.
+            if (transactionsToAdd.length > 0) {
+                portfolioData.push(...transactionsToAdd);
+                const updatedJsonString = JSON.stringify(portfolioData, null, 2);
+                updateAnalysisAndUI(updatedJsonString);
+                downloadPortfolioFile(updatedJsonString);
+                resetAddTransactionForm();
+            }
+        }
+
+        /**
+         * Resets the "Add New Transaction" form to its default state.
+         */
+        function resetAddTransactionForm() {
+            // Reset text and number inputs
+            document.getElementById('formSymbol').value = '';
+            document.getElementById('formDate').value = '';
+            document.getElementById('formVolume').value = '';
+            document.getElementById('formPrice').value = '';
+            document.getElementById('formCommission').value = '';
+            document.getElementById('formDivPerShare').value = '';
+            document.getElementById('formTaxRate').value = '10'; // Reset to default
+            document.getElementById('formDivRemark').value = '';
+            document.getElementById('formReturnPerShare').value = '';
+            document.getElementById('formReturnRemark').value = '';
+
+            // Reset select to default and trigger the display update to show BUY fields
+            document.getElementById('formType').value = 'BUY';
+            updateFormFieldsForType();
+        }
+
+        /**
+         * Toggles the visibility of lot details for a specific symbol.
+         */
+        function toggleLotDetails(symbol) {
+            // Select rows using the data attribute, which is safer for special characters like '.'
+            const detailRows = document.querySelectorAll(`.lot-detail-row[data-group="${symbol}"]`);
+            const icon = document.getElementById(`toggle-icon-${symbol}`);
+            
+            // Check the state of the first row to decide the action for all
+            const isHidden = detailRows[0] && detailRows[0].style.display === 'none';
+
+            detailRows.forEach(row => {
+                row.style.display = isHidden ? '' : 'none';
+            });
+
+            if (icon) {
+                icon.innerText = isHidden ? '−' : '+'; // Use a proper minus sign
+            }
+        }
+
+        /**
+         * Performs a year-end closing operation.
+         */
+        async function performYearEndClosing() {
+            if (portfolioData.length === 0) {
+                alert('Please analyze a portfolio file first.');
                 return;
             }
 
-            // 3. Add the new transaction to our in-memory data
-            portfolioData.push(newTx);
+            if (!confirm('This will create a new portfolio file containing only your current holdings and will reset all realized P/L and dividend history. The original transactions will be removed.\n\nAre you sure you want to proceed?')) {
+                return;
+            }
 
-            // 4. Convert the updated data to a JSON string
-            const updatedJsonString = JSON.stringify(portfolioData, null, 2);
+            try {
+                const response = await fetch('/close_year', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(portfolioData),
+                });
 
-            // 5. Re-analyze the new data and update the UI immediately
-            updateAnalysisAndUI(updatedJsonString);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to perform year-end closing.');
+                }
 
-            // 6. Create a downloadable file from the updated data
-            downloadPortfolioFile(updatedJsonString);
+                const newPortfolio = await response.json();
+                portfolioData = newPortfolio; // Update global data
+                const newPortfolioJsonString = JSON.stringify(newPortfolio, null, 2);
+                await updateAnalysisAndUI(newPortfolioJsonString);
+                downloadPortfolioFile(newPortfolioJsonString);
+                alert('Year-end closing complete. Your new "portfolio.json" has been downloaded. Please use this new file for future analysis.');
+
+                const currentYear = new Date().getFullYear();
+                const newTitle = `My Stock Portfolio Analyzer Start ${currentYear}`;
+                document.getElementById('main-title').innerText = newTitle;
+                localStorage.setItem('portfolioAnalyzerTitle', newTitle); // Save the title
+            } catch (error) {
+                console.error('Error during year-end closing:', error);
+                alert(`An error occurred: ${error.message}`);
+            }
         }
 
         /**
@@ -349,8 +575,19 @@
                 row.insertCell(0).innerText = tx.date;
                 row.insertCell(1).innerText = tx.symbol;
                 row.insertCell(2).innerText = tx.type;
-                row.insertCell(3).innerText = tx.volume.toLocaleString();
-                row.insertCell(4).innerText = tx.price_per_unit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                const col4 = row.insertCell(3);
+                const col5 = row.insertCell(4);
+
+                if (tx.type.toUpperCase() === 'DIVIDEND') {
+                    // Defensively handle cases where total_amount might be null
+                    const amount = tx.total_amount ?? 0;
+                    col4.innerText = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    col5.innerText = '—'; // Em dash for N/A
+                } else {
+                    col4.innerText = tx.volume.toLocaleString();
+                    col5.innerText = tx.price_per_unit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                }
                 
                 const actionsCell = row.insertCell(5);
                 // We will add an Edit button later
@@ -472,26 +709,117 @@
             }
         }
 
-        function toggleLotSelector() {
+        function updateFormFieldsForType() {
             const type = document.getElementById('formType').value;
-            const container = document.getElementById('lotSelectorContainer');
-            const selector = document.getElementById('formClosesLot');
-            
-            if (type === 'SELL') {
-                const symbol = document.getElementById('formSymbol').value.toUpperCase();
-                selector.innerHTML = '<option value="">-- Select a Lot --</option>'; // Clear and add default
-                
-                const relevantLots = openLotsData.filter(lot => lot.symbol === symbol);
-                relevantLots.forEach(lot => {
-                    const option = document.createElement('option');
-                    option.value = lot.lot_number;
-                    option.innerText = `Lot ${lot.lot_number} (${lot.remaining_volume} shares @ ${lot.buy_price})`;
-                    selector.appendChild(option);
-                });
-                container.style.display = 'block';
-            } else {
-                container.style.display = 'none';
+            const lotSelectorContainer = document.getElementById('lotSelectorContainer');
+            const buySellFields = document.getElementById('buySellFieldsContainer');
+            const dividendFields = document.getElementById('dividendFieldsContainer');
+            const cashReturnFields = document.getElementById('cashReturnFieldsContainer');
+            const dividendLotList = document.getElementById('dividendLotListContainer');
+            const cashReturnLotList = document.getElementById('cashReturnLotListContainer');
+
+            // Reset all to hidden first
+            buySellFields.style.display = 'none';
+            dividendFields.style.display = 'none';
+            cashReturnFields.style.display = 'none';
+            lotSelectorContainer.style.display = 'none';
+            dividendLotList.style.display = 'none';
+            dividendLotList.innerHTML = ''; // Clear content
+            cashReturnLotList.style.display = 'none';
+            cashReturnLotList.innerHTML = ''; // Clear content
+
+            if (type === 'BUY') {
+                buySellFields.style.display = 'flex';
+            } else if (type === 'SELL') {
+                buySellFields.style.display = 'flex';
+                lotSelectorContainer.style.display = 'block';
+                populateSellLotSelector(); // Use a dedicated function for clarity
+            } else if (type === 'DIVIDEND') {
+                dividendFields.style.display = 'flex';
+                dividendLotList.style.display = 'block';
+                populateDividendCashReturnLists('DIVIDEND');
+            } else if (type === 'CASH_RETURN') {
+                cashReturnFields.style.display = 'flex';
+                cashReturnLotList.style.display = 'block';
+                populateDividendCashReturnLists('CASH_RETURN');
             }
+        }
+
+        function populateSellLotSelector() {
+            const lotSelector = document.getElementById('formClosesLot');
+            const symbol = document.getElementById('formSymbol').value.toUpperCase();
+            lotSelector.innerHTML = '<option value="">-- Select a Lot --</option>'; // Clear and add default
+            
+            const relevantLots = openLotsData.filter(lot => lot.symbol === symbol);
+            relevantLots.forEach(lot => {
+                const option = document.createElement('option');
+                option.value = lot.lot_number;
+                option.dataset.volume = lot.remaining_volume;
+                option.innerText = `Lot ${lot.lot_number} (${lot.remaining_volume.toLocaleString()} sh @ ${lot.buy_price})`;
+                lotSelector.appendChild(option);
+            });
+        }
+
+        function populateDividendCashReturnLists(type) {
+            const symbol = document.getElementById('formSymbol').value.toUpperCase();
+            const relevantLots = openLotsData.filter(lot => lot.symbol === symbol);
+            const container = (type === 'DIVIDEND') ? document.getElementById('dividendLotListContainer') : document.getElementById('cashReturnLotListContainer');
+            
+            if (!symbol || relevantLots.length === 0) {
+                container.innerHTML = `<p style="color: #888;">Enter a symbol with open lots to see eligible lots here.</p>`;
+                return;
+            }
+
+            let tableHTML = `
+                <h4>Eligible Lots for ${symbol}</h4>
+                <table style="font-size: 0.9em;">
+                    <thead><tr><th>Lot Number</th><th>Remaining Shares</th><th>Net Amount Received</th></tr></thead>
+                    <tbody>
+            `;
+
+            relevantLots.forEach(lot => {
+                tableHTML += `
+                    <tr class="lot-row" data-lot-number="${lot.lot_number}" data-volume="${lot.remaining_volume}">
+                        <td>${lot.lot_number}</td>
+                        <td style="text-align:right;">${lot.remaining_volume.toLocaleString()}</td>
+                        <td class="net-amount-cell" style="text-align:right; font-weight: bold;">-</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `</tbody></table>`;
+            container.innerHTML = tableHTML;
+        }
+
+        function calculateLiveDividends() {
+            const divPerShare = parseFloat(document.getElementById('formDivPerShare').value) || 0;
+            const taxRate = parseFloat(document.getElementById('formTaxRate').value) || 0;
+
+            const lotRows = document.querySelectorAll('#dividendLotListContainer .lot-row');
+            lotRows.forEach(row => {
+                const volume = parseInt(row.dataset.volume, 10);
+                const grossAmount = divPerShare * volume;
+                const taxAmount = grossAmount * (taxRate / 100);
+                const netAmount = grossAmount - taxAmount;
+
+                const cell = row.querySelector('.net-amount-cell');
+                cell.innerText = netAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                cell.dataset.amount = netAmount.toFixed(4); // Store raw value for submission
+            });
+        }
+
+        function calculateLiveCashReturns() {
+            const returnPerShare = parseFloat(document.getElementById('formReturnPerShare').value) || 0;
+
+            const lotRows = document.querySelectorAll('#cashReturnLotListContainer .lot-row');
+            lotRows.forEach(row => {
+                const volume = parseInt(row.dataset.volume, 10);
+                const returnAmount = returnPerShare * volume;
+
+                const cell = row.querySelector('.net-amount-cell');
+                cell.innerText = returnAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                cell.dataset.amount = returnAmount.toFixed(4); // Store raw value for submission
+            });
         }
 
         function analyzeSingleStock() {
@@ -515,27 +843,80 @@
             // Sort by buy price, descending (แพงไปถูก)
             stockLots.sort((a, b) => b.buy_price - a.buy_price);
 
+            // Initialize totals
+            let totalUnrealizedPL = 0;
+            let totalNetUnrealizedPL = 0;
+
             // Clear previous results and display the table
             tableBody.innerHTML = '';
             resultsTable.style.display = 'table';
 
             stockLots.forEach(lot => {
-                const costBasisPerShare = lot.total_cost / lot.original_volume;
-                const remainingCostBasis = costBasisPerShare * lot.remaining_volume;
+                // Calculate average cost per share, including commission, for the remaining shares.
+                const costBasisPerShare = lot.remaining_volume > 0 ? (lot.total_cost / lot.remaining_volume) : 0;
+                const remainingCostBasis = lot.total_cost; // This is already the cost for remaining shares
                 const currentValue = lot.remaining_volume * currentPrice;
                 const unrealizedPL = currentValue - remainingCostBasis;
+                const netUnrealizedPL = unrealizedPL + lot.dividends_received;
+
+                // Accumulate totals
+                totalUnrealizedPL += unrealizedPL;
+                totalNetUnrealizedPL += netUnrealizedPL;
 
                 const row = tableBody.insertRow();
                 row.insertCell(0).innerText = lot.lot_number;
                 row.insertCell(1).innerText = costBasisPerShare.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 row.insertCell(2).innerText = lot.remaining_volume.toLocaleString();
-                row.insertCell(3).innerText = currentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const divCell = row.insertCell(3);
+                divCell.innerText = lot.dividends_received.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (lot.dividends_received > 0) {
+                    divCell.classList.add('pl-green');
+                }
+                row.insertCell(4).innerText = currentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 
-                const plCell = row.insertCell(4);
+                const plCell = row.insertCell(5);
                 plCell.innerText = unrealizedPL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 plCell.classList.add(unrealizedPL >= 0 ? 'pl-green' : 'pl-red');
+
+                const netPlCell = row.insertCell(6);
+                netPlCell.innerText = netUnrealizedPL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                netPlCell.classList.add(netUnrealizedPL >= 0 ? 'pl-green' : 'pl-red');
             });
+
+            // --- NEW: Add summary footer ---
+            // Check if a tfoot exists, if not create it
+            let tfoot = resultsTable.querySelector('tfoot');
+            if (!tfoot) {
+                tfoot = resultsTable.createTFoot();
+            }
+            tfoot.innerHTML = ''; // Clear previous footer
+
+            const footerRow = tfoot.insertRow();
+            footerRow.style.fontWeight = 'bold';
+            footerRow.style.backgroundColor = '#f2f2f2';
+
+            const summaryLabelCell = footerRow.insertCell(0);
+            summaryLabelCell.colSpan = 5; // Span across the first 5 columns
+            summaryLabelCell.innerText = 'Total Unrealized P/L';
+            summaryLabelCell.style.textAlign = 'right';
+
+            const totalPlCell = footerRow.insertCell(1);
+            totalPlCell.innerText = totalUnrealizedPL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalPlCell.classList.add(totalUnrealizedPL >= 0 ? 'pl-green' : 'pl-red');
+
+            const totalNetPlCell = footerRow.insertCell(2);
+            totalNetPlCell.innerText = totalNetUnrealizedPL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            totalNetPlCell.classList.add(totalNetUnrealizedPL >= 0 ? 'pl-green' : 'pl-red');
         }
+
+        // On page load, check if a custom title is saved and apply it.
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTitle = localStorage.getItem('portfolioAnalyzerTitle');
+            if (savedTitle) {
+                document.getElementById('main-title').innerText = savedTitle;
+            }
+        });
+
     </script>
 </body>
 </html>
